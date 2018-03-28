@@ -42,11 +42,11 @@ In general, there is only one script to check the network connection to master s
 
 *  For Standby System 3 IP addresses are needed
 
-** eth0 for ssh etc. in your network (script: 192.168.2.108). 
+   - eth0 for ssh etc. in your network (script: 192.168.2.108). 
 
-** eth0:1 in the subnet of the second master IP (scropt: 192.168.3.107). It is used for  connection check. It is configured/set by the scripts
+   - eth0:1 in the subnet of the second master IP (scropt: 192.168.3.107). It is used for  connection check. It is configured/set by the scripts
 
-** eth0:2 it is the same IP as the productive master system (script: 192.168.2.251). It is configured/set by the scripts (to avoid ip conflicts, normally this interface ist blocked by iptables)
+   - eth0:2 it is the same IP as the productive master system (script: 192.168.2.251). It is configured/set by the scripts (to avoid ip conflicts, normally this interface ist blocked by iptables)
 
 
 
@@ -58,9 +58,9 @@ In general, there is only one script to check the network connection to master s
 
 * add cronjob for execution (or run it manually)
 
-** "crontab -e"
+  - "crontab -e"
 
-** add 
+  - add 
 
 "#check every minute the connection to iobroker"
 
@@ -73,9 +73,9 @@ In general, there is only one script to check the network connection to master s
 * Manually Test
 
 
-** dmesg will show information of the ioBroker Standby script
+  - dmesg will show information of the ioBroker Standby script
 
-** Unplug your master ioBroker from network, or shut the system down
+  - Unplug your master ioBroker from network, or shut the system down
 
 
 ## Limitations and Known Issues
