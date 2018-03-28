@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# this files checks the connection to master ioBroker system
+# the script could be started every minute via crontab
+# this script pings four times with a delay of 15 sec (the script runs about 45sec)
+# the script runs only once at a time (multi instances of this script are avoided)
+
+MASTER_PRODUCTIVE_IP="192.168.2.251"
+MASTER_SECOND_IP="192.168.3.251"
+MASTER_PRODUCTIVE_MAC="c0:3f:d5:6c:9d:b2"
+LOCALHOST_SECOND_IP="192.168.3.108"
+SWITCHOVER_DELAY_MINUTES="1"
+
+
+#singelton
+[[ `pgrep ${0##*/} | wc -l` > 2 ]] && exit 1
+
+#su root -c 'echo ioBroker-Standby started > /dev/kmsg'
+
+############# FIRST STARTUP INIT #################
+#check if second ip is present
+sip=$(ifconfig eth0.1 | grep  $LOCALHOST_SECOND_IP)
+if [[ -z "${sip// }" ]];
+then
+	su root -c 'echo ioBroker-Standby setup eth0.1 > /dev/kmsg'
+	ip link add link eth0 address 00:11:11:11:11:11 eth0.1 type macvlan
+	ifconfig eth0.1 up
+	ifconfig eth0.1 "$LOCALHOST_SECOND_IP"
+fi
+
+
+#check if master ip is present
+sip=$(ifconfig eth0.2 | grep $MASTER_PRODUCTIVE_IP)
+if [[ -z "${sip// }" ]];
+then
+	su root -c 'echo ioBroker-Standby setup eth0.2 > /dev/kmsg'
+	iptables -F
+	iptables -A INPUT -d "$MASTER_PRODUCTIVE_IP" -j DROP
+	iptables -A OUTPUT -s "$MASTER_PRODUCTIVE_IP" -j DROP
+        ip link add link eth0 address "$MASTER_PRODUCTIVE_MAC" eth0.2 type macvlan
+        ifconfig eth0.2 up
+        ifconfig eth0.2 "$MASTER_PRODUCTIVE_IP"
+
+	cd /opt/iobroker
+	iobroker start
+fi
+ 
+
+#check if output file is availible / create it
+if [ -f /opt/ioBrokerStandby/masterState ]; 
+then
+	:
+else 
+	for i in `seq 0 3`;
+	do
+		echo "1" >>  /opt/ioBrokerStandby/masterState
+	done
+fi
+############# FIRST STARTUP INIT #################
+
+
+############# ENABLE STANDBY #################
+#check if master system is reachable
+for i in `seq 0 3`;
+do
+	if  /opt/ioBrokerStandby/boolPing.sh $MASTER_SECOND_IP ; 
+	then
+		echo "1" >> /opt/ioBrokerStandby/masterState
+	else
+		echo "0" >> /opt/ioBrokerStandby/masterState
+	fi
+
+	# use only last  states 
+	nums=$(($SWITCHOVER_DELAY_MINUTES * 4)) 
+	tail -n $nums  /opt/ioBrokerStandby/masterState > /opt/ioBrokerStandby/masterState_ 
+	mv /opt/ioBrokerStandby/masterState_  /opt/ioBrokerStandby/masterState
+
+	summe=$(awk '{ sum += $1 } END { print sum }' /opt/ioBrokerStandby/masterState)
+
+	# check if timeout exceed (switch, if there was no success the last x minutes)
+	if [ $summe -lt 1 ];
+	then
+		#check if (eth0:2 and iobroker) already activated
+		sip=$(iptables -L -n | grep $MASTER_PRODUCTIVE_IP)
+        	if [[ !  -z "${sip// }" ]];
+        	then
+			su root -c 'echo ioBroker-Standby switchover to STANDBY > /dev/kmsg'
+			#switchover- enable network interface
+			iptables -F
+			
+			# start endless loop to rech, if Master is reachable again
+			masterReached=0
+			until [ !  masterReached  ];
+			do
+				sleep 1
+				if  /opt/ioBrokerStandby/boolPing.sh $MASTER_SECOND_IP ; 
+				then
+					su root -c 'echo ioBroker-Standby MASTER reached > /dev/kmsg'
+					masterReached=1;
+				fi
+			done;
+			
+			su root -c 'echo ioBroker-Standby switchover back to MASTER> /dev/kmsg'
+			iptables -A INPUT -d "$MASTER_PRODUCTIVE_IP" -j DROP
+			iptables -A OUTPUT -s "$MASTER_PRODUCTIVE_IP" -j DROP
+		fi
+	fi
+       
+	# delay for activation check
+	if [ $i -lt 3 ];
+        then
+                sleep 15
+       	fi
+done
